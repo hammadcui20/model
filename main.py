@@ -1,98 +1,119 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, render_template, request
+import json
 from flask_cors import CORS
-import cv2
 import numpy as np
-import threading
+import cv2                              # Library for image processing
+from math import floor
 
 app = Flask(__name__)
 CORS(app)
 
-tshirt = cv2.imread('Shirt.png', -1)
-if tshirt is None:
-    print("Error: T-shirt image not found.")
-    exit(1)
-
-body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_upperbody.xml')
-
-DISPLAY_WIDTH = 1280
-DISPLAY_HEIGHT = 720
-
 @app.route('/try-on', methods=['POST'])
-def try_on():
-    data = request.json
-    image_path = data.get('image_path')
+def predict():
+    try:
+        shirtno = 2
+        data = request.json
+        image_path = data.get('image_path')
+        
     
-    if not image_path:
-        return jsonify({'error': 'No image path provided'}), 400
-    
-    frame = cv2.imread(image_path)
-    if frame is None:
-        return jsonify({'error': 'Image not found or unable to read image'}), 400
+        imgshirt = cv2.imread(image_path)
+        cv2.waitKey(1)
+        cap = cv2.VideoCapture(0)
+        ih = shirtno
 
+        while True:
+            # imgshirt = cv2.imread('Shirt.png')
+            
+            if ih == 3:
+                shirtgray = cv2.cvtColor(imgshirt, cv2.COLOR_BGR2GRAY)  # grayscale conversion
+                ret, orig_masks_inv = cv2.threshold(shirtgray, 200, 255, cv2.THRESH_BINARY)  # thresholding
+                orig_masks = cv2.bitwise_not(orig_masks_inv)
+            else:
+                shirtgray = cv2.cvtColor(imgshirt, cv2.COLOR_BGR2GRAY)  # grayscale conversion
+                ret, orig_masks = cv2.threshold(shirtgray, 0, 255, cv2.THRESH_BINARY)  # thresholding
+                orig_masks_inv = cv2.bitwise_not(orig_masks)
+            
+            origshirtHeight, origshirtWidth = imgshirt.shape[:2]
+            face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            ret, img = cap.read()
+            if not ret:
+                return "Failed to capture image from camera", 500
+            
+            height = img.shape[0]
+            width = img.shape[1]
+            resizewidth = int(width * 3 / 2)
+            resizeheight = int(height * 3 / 2)
+            
+            cv2.namedWindow("img", cv2.WINDOW_NORMAL)
+            cv2.resizeWindow("img", (resizewidth, resizeheight))
+            
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+            for (x, y, w, h) in faces:
+                cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
-    bodies = body_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(100, 100))
+                shirtWidth = 3 * w  
+                shirtHeight = shirtWidth * origshirtHeight / origshirtWidth  
+                
+                x1s = x - w
+                x2s = x1s + 3 * w
+                y1s = y + h
+                y2s = y1s + h * 4
+                
+                x1s = max(0, x1s)
+                x2s = min(img.shape[1], x2s)
+                y1s = max(0, y1s)
+                y2s = min(img.shape[0], y2s)
 
-    for (x, y, w, h) in bodies:
-        shirt_width = int(1.5 * w)
-        shirt_height = int(1.5 * h)
-        shirt_x = x - int((shirt_width - w) / 2)
-        shirt_y = y - int((shirt_height - h) / 2)
+                if y1s >= y2s or x1s >= x2s:
+                    print("Invalid ROI dimensions, skipping frame.")
+                    continue
 
-        resized_tshirt = cv2.resize(tshirt, (shirt_width, shirt_height), interpolation=cv2.INTER_AREA)
+                shirtWidth = int(abs(x2s - x1s))
+                shirtHeight = int(abs(y2s - y1s))
+                y1s, y2s, x1s, x2s = map(int, [y1s, y2s, x1s, x2s])
 
-        if shirt_x < 0:
-            resized_tshirt = resized_tshirt[:, -shirt_x:]
-            shirt_x = 0
-        if shirt_y < 0:
-            resized_tshirt = resized_tshirt[-shirt_y:, :]
-            shirt_y = 0
-        if shirt_x + resized_tshirt.shape[1] > frame.shape[1]:
-            resized_tshirt = resized_tshirt[:, :frame.shape[1] - shirt_x]
-        if shirt_y + resized_tshirt.shape[0] > frame.shape[0]:
-            resized_tshirt = resized_tshirt[:frame.shape[0] - shirt_y, :]
+                shirt = cv2.resize(imgshirt, (shirtWidth, shirtHeight), interpolation=cv2.INTER_AREA)
+                mask = cv2.resize(orig_masks, (shirtWidth, shirtHeight), interpolation=cv2.INTER_AREA)
+                masks_inv = cv2.resize(orig_masks_inv, (shirtWidth, shirtHeight), interpolation=cv2.INTER_AREA)
+                
+                rois = img[y1s:y2s, x1s:x2s]
 
-        alpha_tshirt = resized_tshirt[:, :, 3] / 255.0
-        alpha_frame = 1.0 - alpha_tshirt
+                print(f"ROI size: {rois.shape}, Shirt size: {shirt.shape}")
+                
+                if rois.shape[:2] == shirt.shape[:2]:
+                    roi_bgs = cv2.bitwise_and(rois, rois, mask=masks_inv)
+                    roi_fgs = cv2.bitwise_and(shirt, shirt, mask=mask)
+                    dsts = cv2.add(roi_bgs, roi_fgs)
+                    img[y1s:y2s, x1s:x2s] = dsts
+                else:
+                    print(f"Size mismatch: ROI size: {rois.shape}, Shirt size: {shirt.shape}")
 
-        for c in range(0, 3):
-            frame[shirt_y:shirt_y + resized_tshirt.shape[0], shirt_x:shirt_x + resized_tshirt.shape[1], c] = (
-                alpha_tshirt * resized_tshirt[:, :, c] +
-                alpha_frame * frame[shirt_y:shirt_y + resized_tshirt.shape[0], shirt_x:shirt_x + resized_tshirt.shape[1], c]
-            )
+                # Annotate the image with neck, arm, and width dimensions
+                neck_width = w
+                arm_length = h * 2  # This is an estimated value
+                image_width = img.shape[1]
 
-        arm_length = int(0.4 * shirt_height)
-        chest_width = int(0.8 * shirt_width)
-        neck_width = int(0.3 * shirt_width)
+                cv2.putText(img, f"Neck Width: {neck_width}px", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                cv2.putText(img, f"Arm Length: {arm_length}px", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                cv2.putText(img, f"Image Width: {image_width}px", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
-        cv2.putText(frame, f'Shirt: {shirt_width}x{shirt_height}', 
-                    (shirt_x, shirt_y - 50), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.7, (255, 255, 255), 2)
-        cv2.putText(frame, f'Arms: {arm_length}px', 
-                    (shirt_x, shirt_y - 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.7, (255, 255, 255), 2)
-        cv2.putText(frame, f'Chest: {chest_width}px', 
-                    (shirt_x, shirt_y - 10), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.7, (255, 255, 255), 2)
-        cv2.putText(frame, f'Neck: {neck_width}px', 
-                    (shirt_x, shirt_y + 10), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.7, (255, 255, 255), 2)
+                break
 
-    _, buffer = cv2.imencode('.jpg', frame)
-    response = Response(buffer.tobytes(), mimetype='image/jpeg')
-    return response
+            cv2.imshow("img", img)
+            if cv2.waitKey(100) == ord('q'):
+                break
 
-@app.route('/check', methods=['get'])
-def check():
-    print("Hello World!")
-    return jsonify(['Hello World!'])
-    
+        cap.release()  # Release the video capture object
+        cv2.destroyAllWindows()  # Close all OpenCV windows
+        
+        return "Prediction completed successfully", 200
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return f"An error occurred: {e}", 500
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0',debug=True,port=5000)
