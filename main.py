@@ -1,9 +1,11 @@
 from flask import Flask, render_template, request
 import json
-from flask_cors import CORS
 import numpy as np
-import cv2                              # Library for image processing
+import cv2
 from math import floor
+from flask_cors import CORS
+import requests
+from io import BytesIO
 
 app = Flask(__name__)
 CORS(app)
@@ -11,19 +13,23 @@ CORS(app)
 @app.route('/try-on', methods=['POST'])
 def predict():
     try:
-        shirtno = 2
+        shirtno = 3
         data = request.json
-        image_path = data.get('image_path')
-        
-    
-        imgshirt = cv2.imread(image_path)
+        image_url = data.get('image_path')
+        print(f"Image URL: {image_url}")
+
+        response = requests.get(image_url)
+        if response.status_code != 200:
+            return "Failed to download image from URL", 500
+
+        image_array = np.array(bytearray(response.content), dtype=np.uint8)
+        imgshirt = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+
         cv2.waitKey(1)
         cap = cv2.VideoCapture(0)
         ih = shirtno
 
         while True:
-            # imgshirt = cv2.imread('Shirt.png')
-            
             if ih == 3:
                 shirtgray = cv2.cvtColor(imgshirt, cv2.COLOR_BGR2GRAY)  # grayscale conversion
                 ret, orig_masks_inv = cv2.threshold(shirtgray, 200, 255, cv2.THRESH_BINARY)  # thresholding
@@ -52,14 +58,14 @@ def predict():
             faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
             for (x, y, w, h) in faces:
-                cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 10)
 
                 shirtWidth = 3 * w  
                 shirtHeight = shirtWidth * origshirtHeight / origshirtWidth  
                 
                 x1s = x - w
                 x2s = x1s + 3 * w
-                y1s = y + h
+                y1s = y + h + 16  # Start the shirt a bit lower (10 pixels below the chin)
                 y2s = y1s + h * 4
                 
                 x1s = max(0, x1s)
@@ -91,14 +97,18 @@ def predict():
                 else:
                     print(f"Size mismatch: ROI size: {rois.shape}, Shirt size: {shirt.shape}")
 
-                # Annotate the image with neck, arm, and width dimensions
+                # Annotate the image with neck, arm, chest, and width dimensions
                 neck_width = w
                 arm_length = h * 2  # This is an estimated value
+                chest_width = w * 2  # This is an estimated value
                 image_width = img.shape[1]
 
-                cv2.putText(img, f"Neck Width: {neck_width}px", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv2.putText(img, f"Arm Length: {arm_length}px", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv2.putText(img, f"Image Width: {image_width}px", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                text_color = (255, 0, 0)  # Blue color in BGR
+
+                cv2.putText(img, f"Neck Width: {neck_width}px", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
+                cv2.putText(img, f"Arm Length: {arm_length}px", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
+                cv2.putText(img, f"Chest Width: {chest_width}px", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
+                cv2.putText(img, f"Image Width: {image_width}px", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
 
                 break
 
@@ -116,4 +126,4 @@ def predict():
         return f"An error occurred: {e}", 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0',debug=True,port=5000)
+    app.run(host='0.0.0.0', debug=True, port=5000)
