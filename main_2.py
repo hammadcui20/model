@@ -2,8 +2,9 @@ from flask import Flask, request, jsonify
 import numpy as np
 import cv2
 from flask_cors import CORS
-import base64
 import requests
+import base64
+
 app = Flask(__name__)
 CORS(app)
 
@@ -11,7 +12,8 @@ CORS(app)
 def predict():
     try:
         # Load T-shirt image with transparency
-        imgshirt_url = request.form.get('image_path')
+        data = request.json
+        imgshirt_url = data.get('image_path')
         print(f"Image URL: {imgshirt_url}")
         
         # Convert JPEG to PNG
@@ -44,9 +46,9 @@ def predict():
         face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 
         # Load the person's image (Replace with actual user's uploaded image handling)
-        user_img_data = request.files['user_image'].read()
-        nparr = np.frombuffer(user_img_data, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        img = cv2.imread('dp.jpg')
+        if img is None:
+            return "Failed to read the image", 500
         
         zoom_factor = 0.25  # Adjust this factor to zoom out more or less
         img = cv2.resize(img, (0, 0), fx=zoom_factor, fy=zoom_factor)
