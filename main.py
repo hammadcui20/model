@@ -62,14 +62,14 @@ def predict():
             shirtHeight = (shirtWidth * origshirtHeight / origshirtWidth  ) 
             
             y1s = y + h  # Start the shirt just below the chin
-            y2s = y1s + shirtHeight - 2 # Ensure shirt extends below the calculated y1s
+            y2s = y1s + shirtHeight  # Ensure shirt extends below the calculated y1s
 
             x1s = max(0, x - int(shirtWidth / 2))  # Center the shirt horizontally under the face
             x2s = x1s + shirtWidth  # Ensure shirt width matches calculated x1s
             
             x1s = max(0, x1s)
             x2s = min(img.shape[1], x2s)
-            y1s = max(0, y1s)
+            y1s = max(0, y1s) - 8
             y2s = min(img.shape[0], y2s)
 
             if y1s >= y2s or x1s >= x2s:
@@ -77,7 +77,7 @@ def predict():
                 continue
 
             shirtWidth = int(abs(x2s - x1s))
-            shirtHeight = int(abs(y2s - y1s))
+            shirtHeight = int(abs(y2s - y1s ))
             y1s, y2s, x1s, x2s = map(int, [y1s, y2s, x1s, x2s])
 
             shirt = cv2.resize(rgb_shirt, (shirtWidth, shirtHeight), interpolation=cv2.INTER_AREA)
