@@ -48,7 +48,7 @@ def predict():
         nparr = np.frombuffer(user_img_data, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        zoom_factor = 0.25  # Adjust this factor to zoom out more or less
+        zoom_factor = 0.40  # Adjust this factor to zoom out more or less
         img = cv2.resize(img, (0, 0), fx=zoom_factor, fy=zoom_factor)
         height, width = img.shape[:2]
         
@@ -59,9 +59,9 @@ def predict():
             cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
             shirtWidth = 10 * w  
-            shirtHeight = shirtWidth * origshirtHeight / origshirtWidth  
+            shirtHeight = (shirtWidth * origshirtHeight / origshirtWidth  ) 
             
-            y1s = y + h + 16  # Start the shirt just below the chin
+            y1s = y + h  # Start the shirt just below the chin
             y2s = y1s + shirtHeight  # Ensure shirt extends below the calculated y1s
 
             x1s = max(0, x - int(shirtWidth / 2))  # Center the shirt horizontally under the face
