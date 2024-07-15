@@ -62,7 +62,7 @@ def predict():
             shirtHeight = (shirtWidth * origshirtHeight / origshirtWidth  ) 
             
             y1s = y + h  # Start the shirt just below the chin
-            y2s = y1s + shirtHeight  # Ensure shirt extends below the calculated y1s
+            y2s = y1s + shirtHeight - 2 # Ensure shirt extends below the calculated y1s
 
             x1s = max(0, x - int(shirtWidth / 2))  # Center the shirt horizontally under the face
             x2s = x1s + shirtWidth  # Ensure shirt width matches calculated x1s
